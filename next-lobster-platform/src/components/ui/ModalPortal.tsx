@@ -33,5 +33,13 @@ export function ModalPortal({ children, lockScroll = true }: ModalPortalProps) {
 
   if (!mounted) return null;
 
-  return createPortal(children, document.body);
+  return createPortal(
+    <div
+      data-modal-portal-layer="true"
+      className="fixed inset-0 isolate z-[2147483647] pointer-events-auto"
+    >
+      {children}
+    </div>,
+    document.body
+  );
 }
