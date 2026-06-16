@@ -38,7 +38,7 @@ export function ModalPortal({ children, lockScroll = true }: ModalPortalProps) {
       data-modal-portal-layer="true"
       className="pointer-events-none fixed inset-0 isolate z-[2147483647]"
     >
-      <div className="pointer-events-auto relative h-full w-full">
+      <div className="pointer-events-none relative h-full w-full [&>*]:pointer-events-auto">
         {children}
       </div>
     </div>,
