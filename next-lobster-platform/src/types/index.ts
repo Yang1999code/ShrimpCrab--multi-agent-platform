@@ -29,6 +29,8 @@ export interface Lobster {
 export interface AgentConfig {
   platform?: string | null;
   providerId?: string | null;
+  runtimeMode?: RuntimeMode;
+  installStrategy?: 'skip' | 'prompt' | 'managed';
   apiKeys?: Record<string, string>;
   model?: string;
   temperature?: number;
@@ -170,6 +172,9 @@ export interface RuntimePlatformHealth {
   ready: boolean;
   issues: string[];
   installHint: string;
+  docsUrl?: string;
+  installUrl?: string;
+  statusBadge?: string;
 }
 
 export interface RuntimeHealth {
@@ -181,6 +186,36 @@ export interface RuntimeHealth {
     missingCli: number;
     missingProvider: number;
   };
+}
+
+export type AgentBaseId = 'openclaw' | 'claude-code' | 'hermes' | 'opencode';
+export type RuntimeMode = 'system' | 'managed';
+
+export interface AgentBaseDefinition {
+  id: AgentBaseId;
+  displayName: string;
+  shortLabel: string;
+  statusBadge: '已有，推荐' | '已有接口，推荐补齐';
+  descriptionZh: string;
+  binaryName: string;
+  versionCommand: string[];
+  docsUrl: string;
+  installUrl: string;
+  managedInstallSupported: boolean;
+  installCommands: string[];
+  riskNoteZh: string;
+}
+
+export interface AgentInstallGuide {
+  platform: AgentBaseId;
+  displayName: string;
+  status: 'idle' | 'checking' | 'needs-install' | 'needs-confirmation' | 'installing' | 'installed' | 'failed';
+  docsUrl: string;
+  installUrl: string;
+  installCommands: string[];
+  requiresUserConfirmation: boolean;
+  managedInstallSupported: boolean;
+  riskNoteZh: string;
 }
 
 export interface ArchitectureAgent {

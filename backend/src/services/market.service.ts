@@ -28,6 +28,12 @@ import {
   shouldSkipPublishPath,
   type PublishRisk,
 } from './publish-safety.service.js';
+import {
+  isAgentBaseId,
+  normalizeRuntimeMode,
+  type AgentBaseId,
+  type RuntimeMode,
+} from './agent-base-registry.service.js';
 
 const PROFILE_CACHE_ROOT = path.join(process.cwd(), 'data', 'claw_profile');
 const SOURCE_INSTANCE_TAG_PREFIX = 'sourceInstance:';
@@ -49,21 +55,23 @@ const OFFICIAL_AGENT_TAGS = [
   'platform:openclaw',
 ];
 
-const ADOPT_SUPPORTED_PLATFORMS = ['openclaw', 'hermes', 'opencode'] as const;
-export type AdoptPlatform = (typeof ADOPT_SUPPORTED_PLATFORMS)[number];
+const ADOPT_SUPPORTED_PLATFORMS: AgentBaseId[] = ['openclaw', 'claude-code', 'hermes', 'opencode'];
+export type AdoptPlatform = AgentBaseId;
 
 export function isAdoptPlatform(value: string): value is AdoptPlatform {
-  return (ADOPT_SUPPORTED_PLATFORMS as readonly string[]).includes(value);
+  return isAgentBaseId(value) && ADOPT_SUPPORTED_PLATFORMS.includes(value);
 }
 
 const PLATFORM_STATE_DIRS: Record<AdoptPlatform, string> = {
   openclaw: '.openclaw',
+  'claude-code': '.claude',
   hermes: '.hermes',
   opencode: '.opencode',
 };
 
 const PLATFORM_AVATARS: Record<AdoptPlatform, string> = {
   openclaw: OFFICIAL_AGENT_AVATAR,
+  'claude-code': '/agent-icons/claude-code.svg',
   hermes: '/agent-icons/hermes.svg',
   opencode: '/agent-icons/opencode.svg',
 };
@@ -431,7 +439,8 @@ export async function ensureOfficialAgentMarketEntry(
 export async function adoptOfficialAgentToUser(
   userId: string,
   requestedName: string,
-  platform: AdoptPlatform = 'openclaw'
+  platform: AdoptPlatform = 'openclaw',
+  options: { runtimeMode?: RuntimeMode | string; installStrategy?: 'skip' | 'prompt' | 'managed' } = {}
 ): Promise<{ success: boolean; agentId?: string; error?: string }> {
   const displayName = requestedName.trim();
   if (!displayName) {
@@ -445,6 +454,8 @@ export async function adoptOfficialAgentToUser(
 
   const db = getRawDb();
   const now = Date.now();
+  const runtimeMode = normalizeRuntimeMode(options.runtimeMode);
+  const installStrategy = options.installStrategy || (runtimeMode === 'managed' ? 'prompt' : 'skip');
   const agentId = crypto.randomUUID().replace(/-/g, '');
   const workspacePath = getAgentWorkspacePath(userId, agentId);
   const baselinePath = getAgentBaselinePath(userId, agentId);
@@ -480,11 +491,20 @@ export async function adoptOfficialAgentToUser(
         ...((manifest.entrypoint && typeof manifest.entrypoint === 'object') ? manifest.entrypoint as Record<string, unknown> : {}),
         type: platform,
       },
+      runtime: {
+        ...((manifest.runtime && typeof manifest.runtime === 'object') ? manifest.runtime as Record<string, unknown> : {}),
+        mode: runtimeMode,
+        source: runtimeMode === 'managed' ? 'managed-install' : 'PATH',
+        installManaged: runtimeMode === 'managed',
+        installStrategy,
+      },
       metadata: {
         ...((manifest.metadata && typeof manifest.metadata === 'object') ? manifest.metadata as Record<string, unknown> : {}),
         source: 'official-agent',
         sourceMarketAgentId: OFFICIAL_AGENT_MARKET_ID,
         sourceWorkspace: 'fixed-official-workspace',
+        runtimeMode,
+        installStrategy,
       },
     };
 
@@ -498,6 +518,8 @@ export async function adoptOfficialAgentToUser(
           description: OFFICIAL_AGENT_DESCRIPTION,
           avatar: PLATFORM_AVATARS[platform],
           platform,
+          runtimeMode,
+          installStrategy,
           providerId: null,
           updatedAt: new Date(now).toISOString(),
         },
@@ -531,7 +553,7 @@ export async function adoptOfficialAgentToUser(
       baselinePath,
       'idle',
       JSON.stringify(manifest),
-      JSON.stringify([...OFFICIAL_AGENT_TAGS, `platform:${platform}`]),
+      JSON.stringify([...OFFICIAL_AGENT_TAGS.filter((tag) => !tag.startsWith('platform:')), `platform:${platform}`]),
       null,
       null,
       0,

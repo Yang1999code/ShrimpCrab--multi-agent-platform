@@ -151,6 +151,8 @@ export interface AgentUserConfig {
   platform?: string | null;
   avatar?: string;
   providerId?: string | null;
+  runtimeMode?: 'system' | 'managed';
+  installStrategy?: 'skip' | 'prompt' | 'managed';
   apiKeys?: Record<string, string>;
   model?: string;
   temperature?: number;

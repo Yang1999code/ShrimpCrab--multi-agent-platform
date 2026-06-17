@@ -13,6 +13,11 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import os from 'os';
+import {
+  getAgentBaseDefinition,
+  isAgentBaseId,
+  type RuntimeMode,
+} from './agent-base-registry.service.js';
 
 export type AgentPlatform = 'claude-code' | 'openclaw' | 'codex' | 'hermes' | 'opencode';
 
@@ -24,13 +29,7 @@ export interface AgentSession {
   process: ChildProcess | null;
   status: 'idle' | 'running' | 'waiting' | 'error' | 'stopped';
   startedAt: Date;
-  providerConfig?: {
-    apiKey: string;
-    baseUrl?: string;
-    models?: Array<string | { id?: string; name?: string }>;
-    stateDir?: string | null;
-    providerType?: string;
-  };
+  providerConfig?: ProviderConfig;
 }
 
 export interface RunnerResponse {
@@ -82,6 +81,7 @@ export interface ProviderConfig {
   models?: Array<string | { id?: string; name?: string }>;
   stateDir?: string | null;
   providerType?: string;
+  runtimeMode?: RuntimeMode;
 }
 
 // Detect platform
@@ -713,12 +713,37 @@ const PLATFORM_CONFIGS: Record<AgentPlatform, PlatformConfig> = {
   },
 };
 
-function getCliHealthInvocation(platform: AgentPlatform): { command: string; args: string[]; usesWsl: boolean } {
-  const config = PLATFORM_CONFIGS[platform];
+function getCliHealthInvocation(platform: AgentPlatform, runtimeMode: RuntimeMode = 'system'): { command: string; args: string[]; usesWsl: boolean } {
+  const config = getRuntimePlatformConfig(platform, runtimeMode);
   return {
     command: config.checkCommand,
     args: [config.versionFlag],
     usesWsl: false,
+  };
+}
+
+function getManagedAgentBaseBinDir(platform: AgentPlatform): string {
+  return resolveHostPath(
+    process.env.OPENCLAW_MANAGED_AGENT_BIN_DIR ||
+    path.join(os.homedir(), '.openclaw', 'agent-bases', platform, 'bin')
+  );
+}
+
+function resolveManagedRuntimeCommand(platform: AgentPlatform): string {
+  if (!isAgentBaseId(platform)) {
+    return PLATFORM_CONFIGS[platform].command;
+  }
+  return path.join(getManagedAgentBaseBinDir(platform), getAgentBaseDefinition(platform).binaryName);
+}
+
+function getRuntimePlatformConfig(platform: AgentPlatform, runtimeMode: RuntimeMode = 'system'): PlatformConfig {
+  const config = PLATFORM_CONFIGS[platform];
+  if (runtimeMode !== 'managed') return config;
+  const managedCommand = resolveManagedRuntimeCommand(platform);
+  return {
+    ...config,
+    command: managedCommand,
+    checkCommand: managedCommand,
   };
 }
 
@@ -773,8 +798,8 @@ class AgentRunner extends EventEmitter {
   private sessions: Map<string, AgentSession> = new Map();
   private outputBuffers: Map<string, string> = new Map();
 
-  async checkCliAvailable(platform: AgentPlatform): Promise<CliHealthCheck> {
-    const invocation = getCliHealthInvocation(platform);
+  async checkCliAvailable(platform: AgentPlatform, runtimeMode: RuntimeMode = 'system'): Promise<CliHealthCheck> {
+    const invocation = getCliHealthInvocation(platform, runtimeMode);
     const resolvedInvocation = resolveCommandInvocation(invocation.command, invocation.args);
 
     try {
@@ -1031,7 +1056,7 @@ class AgentRunner extends EventEmitter {
   }
 
   private executeOneShotTurn(session: AgentSession, message: string): Promise<string> {
-    const config = PLATFORM_CONFIGS[session.platform];
+    const config = getRuntimePlatformConfig(session.platform, session.providerConfig?.runtimeMode);
     const args = this.buildOneShotArgs(
       session.platform,
       session.workspacePath,
@@ -1232,7 +1257,7 @@ class AgentRunner extends EventEmitter {
       throw new Error(`Workspace not found: ${resolvedWorkspacePath}`);
     }
 
-    const cliCheck = await this.checkCliAvailable(platform);
+    const cliCheck = await this.checkCliAvailable(platform, resolvedProviderConfig?.runtimeMode);
     if (!cliCheck.available) {
       throw new Error(formatCliHealthFailure(platform, cliCheck));
     }
@@ -1251,7 +1276,7 @@ class AgentRunner extends EventEmitter {
       return this.executeOpenClawTurn(session, message, timeoutMs);
     }
 
-    const config = PLATFORM_CONFIGS[platform];
+    const config = getRuntimePlatformConfig(platform, resolvedProviderConfig?.runtimeMode);
     
     // Build environment
     const env = this.buildProviderEnv(config, resolvedWorkspacePath, resolvedProviderConfig);
@@ -1337,13 +1362,13 @@ class AgentRunner extends EventEmitter {
       throw new Error(`Workspace not found: ${resolvedWorkspacePath}`);
     }
 
-    const cliCheck = await this.checkCliAvailable(platform);
+    const cliCheck = await this.checkCliAvailable(platform, resolvedProviderConfig?.runtimeMode);
     if (!cliCheck.available) {
       throw new Error(formatCliHealthFailure(platform, cliCheck));
     }
 
     const sessionId = this.generateSessionId();
-    const config = PLATFORM_CONFIGS[platform];
+    const config = getRuntimePlatformConfig(platform, resolvedProviderConfig?.runtimeMode);
 
     if (platform === 'openclaw') {
       const session: AgentSession = {
@@ -1514,7 +1539,7 @@ class AgentRunner extends EventEmitter {
       return true;
     }
 
-    const config = PLATFORM_CONFIGS[session.platform];
+    const config = getRuntimePlatformConfig(session.platform, session.providerConfig?.runtimeMode);
     if (config.usePrintMode) {
       if (session.status === 'waiting') {
         this.emit('response', {

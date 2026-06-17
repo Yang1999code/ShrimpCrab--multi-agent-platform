@@ -9,6 +9,8 @@ import { useAuthStore } from '@/store/useAuthStore';
 import { useStore } from '@/store/useStore';
 import {
   adoptOfficialLobster,
+  fetchAgentBases,
+  fetchRuntimeHealth,
   fetchTeamTemplates,
   adoptTeamTemplate,
   fetchTeamTemplateDuplicates,
@@ -17,11 +19,11 @@ import {
 } from '@/lib/api';
 import { API_BASE } from '@/lib/runtime';
 import { NodeFlowPreview } from '@/components/architecture/NodeFlowPreview';
-import type { Architecture, ArchitectureEdge, ArchitectureNode, WorkflowDsl } from '@/types';
+import type { AgentBaseDefinition, Architecture, ArchitectureEdge, ArchitectureNode, RuntimeMode, RuntimePlatformHealth, WorkflowDsl } from '@/types';
 
 type MarketTabKey = 'market' | 'team' | 'social';
 type MarketDisplayMode = 'grid' | 'category';
-type AdoptPlatform = 'openclaw' | 'hermes' | 'opencode';
+type AdoptPlatform = 'openclaw' | 'claude-code' | 'hermes' | 'opencode';
 type MarketCategoryKey = AdoptPlatform | 'codex' | 'claude-code' | 'other';
 type AgentCategoryKey = MarketCategoryKey;
 
@@ -31,6 +33,10 @@ interface PlatformHouse {
   eyebrow: string;
   description: string;
   adoptHint: string;
+  adoptPlaceholder: string;
+  statusBadge: '已有，推荐' | '已有接口，推荐补齐';
+  docsUrl: string;
+  installUrl: string;
   avatar: string;
   bg: string;
 }
@@ -40,17 +46,38 @@ const PLATFORM_HOUSES: PlatformHouse[] = [
     id: 'openclaw',
     name: 'OpenClaw 家',
     eyebrow: 'OPENCLAW',
-    description: '支持 workspace、skills 和多 Agent 协作的全能型引擎。',
+    description: '默认底座，适合 OpenClaw/PI 工作流、workspace 管理和多 Agent 协作。',
     adoptHint: '给你的 OpenClaw Agent 起个名字',
+    adoptPlaceholder: '例如：我的龙虾助手',
+    statusBadge: '已有，推荐',
+    docsUrl: 'https://pi.dev/',
+    installUrl: 'https://pi.dev/',
     avatar: '/claw_profile/03.png',
     bg: 'bg-pixel-green',
+  },
+  {
+    id: 'claude-code',
+    name: 'Claude Code 家',
+    eyebrow: 'CLAUDE CODE',
+    description: '适合代码任务、长上下文规划和工程协作，依赖 Claude Code CLI 与官方授权。',
+    adoptHint: '给你的 Claude Code Agent 起个名字',
+    adoptPlaceholder: '例如：Claude代码伙伴',
+    statusBadge: '已有接口，推荐补齐',
+    docsUrl: 'https://code.claude.com/docs',
+    installUrl: 'https://code.claude.com/docs',
+    avatar: '/agent-icons/claude-code.svg',
+    bg: 'bg-purple-700',
   },
   {
     id: 'hermes',
     name: 'Hermes 家',
     eyebrow: 'HERMES',
-    description: '轻量高效的工具调用型引擎，适合快速任务执行。',
+    description: '适合记忆、技能、自动化任务和轻量工具调用型 Agent。',
     adoptHint: '给你的 Hermes Agent 起个名字',
+    adoptPlaceholder: '例如：Hermes小助手',
+    statusBadge: '已有，推荐',
+    docsUrl: 'https://github.com/nousresearch/hermes-agent',
+    installUrl: 'https://github.com/nousresearch/hermes-agent',
     avatar: '/agent-icons/hermes.svg',
     bg: 'bg-pixel-blue',
   },
@@ -58,8 +85,12 @@ const PLATFORM_HOUSES: PlatformHouse[] = [
     id: 'opencode',
     name: 'OpenCode 家',
     eyebrow: 'OPENCODE',
-    description: '终端原生的轻量编码引擎，单次调用即出结果。',
+    description: '开源编码 CLI，适合终端原生开发、代码修改和多模型接入。',
     adoptHint: '给你的 OpenCode Agent 起个名字',
+    adoptPlaceholder: '例如：我的编码助手',
+    statusBadge: '已有，推荐',
+    docsUrl: 'https://opencode.ai/',
+    installUrl: 'https://opencode.ai/',
     avatar: '/agent-icons/opencode.svg',
     bg: 'bg-amber-600',
   },
@@ -86,13 +117,22 @@ const MARKET_CATEGORIES: MarketCategory[] = [
     officialHouse: PLATFORM_HOUSES[0],
   },
   {
+    id: 'claude-code',
+    name: 'Claude村',
+    eyebrow: 'CLAUDE',
+    description: '适合长上下文规划、文档推理与代码协作。',
+    avatar: '/agent-icons/claude-code.svg',
+    bg: 'bg-purple-700',
+    officialHouse: PLATFORM_HOUSES[1],
+  },
+  {
     id: 'hermes',
     name: 'Hermes村',
     eyebrow: 'HERMES',
     description: '轻量工具调用、定时任务、快速执行型 Agent。',
     avatar: '/agent-icons/hermes.svg',
     bg: 'bg-pixel-blue',
-    officialHouse: PLATFORM_HOUSES[1],
+    officialHouse: PLATFORM_HOUSES[2],
   },
   {
     id: 'opencode',
@@ -101,7 +141,7 @@ const MARKET_CATEGORIES: MarketCategory[] = [
     description: '终端原生、代码执行、工程修复型 Agent。',
     avatar: '/agent-icons/opencode.svg',
     bg: 'bg-amber-600',
-    officialHouse: PLATFORM_HOUSES[2],
+    officialHouse: PLATFORM_HOUSES[3],
   },
   {
     id: 'codex',
@@ -110,14 +150,6 @@ const MARKET_CATEGORIES: MarketCategory[] = [
     description: '适合代码理解、修改、评审与自动化协作。',
     avatar: '/agent-icons/codex.svg',
     bg: 'bg-pixel-black',
-  },
-  {
-    id: 'claude-code',
-    name: 'Claude村',
-    eyebrow: 'CLAUDE',
-    description: '适合长上下文规划、文档推理与代码协作。',
-    avatar: '/agent-icons/claude-code.svg',
-    bg: 'bg-purple-700',
   },
   {
     id: 'other',
@@ -271,8 +303,33 @@ function AdoptModal({
   const router = useRouter();
   const { initialize } = useStore();
   const [name, setName] = useState('');
+  const [runtimeMode, setRuntimeMode] = useState<RuntimeMode>('system');
+  const [runtimeHealth, setRuntimeHealth] = useState<RuntimePlatformHealth | null>(null);
+  const [agentBase, setAgentBase] = useState<AgentBaseDefinition | null>(null);
+  const [loadingRuntime, setLoadingRuntime] = useState(true);
   const [adopting, setAdopting] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingRuntime(true);
+    Promise.allSettled([fetchRuntimeHealth(), fetchAgentBases()])
+      .then(([healthResult, basesResult]) => {
+        if (cancelled) return;
+        if (healthResult.status === 'fulfilled') {
+          setRuntimeHealth(healthResult.value.platforms.find((item) => item.platform === house.id) || null);
+        }
+        if (basesResult.status === 'fulfilled') {
+          setAgentBase(basesResult.value.bases.find((item) => item.id === house.id) || null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingRuntime(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [house.id]);
 
   const handleAdopt = async () => {
     const trimmed = name.trim();
@@ -280,7 +337,11 @@ function AdoptModal({
     setAdopting(true);
     setError('');
     try {
-      await adoptOfficialLobster(trimmed, house.id);
+      await adoptOfficialLobster(trimmed, {
+        platform: house.id,
+        runtimeMode,
+        installStrategy: runtimeMode === 'managed' ? 'prompt' : 'skip',
+      });
       await initialize();
       onClose();
       router.push('/');
@@ -290,6 +351,12 @@ function AdoptModal({
       setAdopting(false);
     }
   };
+
+  const runtimeReady = runtimeHealth?.ready === true;
+  const cliAvailable = runtimeHealth?.cli.available === true;
+  const installUrl = agentBase?.installUrl || runtimeHealth?.installUrl || house.installUrl;
+  const docsUrl = agentBase?.docsUrl || runtimeHealth?.docsUrl || house.docsUrl;
+  const installCommands = agentBase?.installCommands || [];
 
   return (
     <ModalPortal>
@@ -304,7 +371,7 @@ function AdoptModal({
         initial={{ scale: 0.95, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.95, opacity: 0 }}
-        className="w-full max-w-sm border-[3px] border-pixel-black bg-pixel-white"
+        className="w-full max-w-lg border-[3px] border-pixel-black bg-pixel-white"
         style={{ boxShadow: '3px 3px 0px 0px #101010' }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -321,12 +388,67 @@ function AdoptModal({
         </div>
 
         <div className="p-4 space-y-3">
+          <div className="space-y-2 border-[3px] border-pixel-black bg-pixel-white p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="border-2 border-pixel-black bg-pixel-yellow px-2 py-1 font-pixel text-[10px] font-bold text-pixel-black">
+                {agentBase?.statusBadge || house.statusBadge}
+              </span>
+              <span className="font-pixel text-[10px] text-pixel-black/60">
+                {loadingRuntime ? '检测中...' : cliAvailable ? '本机 CLI 可用' : '本机 CLI 未检测到'}
+              </span>
+            </div>
+            <p className="font-pixel text-xs leading-relaxed text-pixel-black/75">{agentBase?.descriptionZh || house.description}</p>
+            {!runtimeReady && runtimeHealth?.issues?.[0] && (
+              <p className="font-pixel text-[10px] leading-relaxed text-pixel-red">{runtimeHealth.issues[0]}</p>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => setRuntimeMode('system')}
+              className={`border-[3px] border-pixel-black p-3 text-left font-pixel text-xs ${
+                runtimeMode === 'system' ? 'bg-pixel-green text-pixel-white' : 'bg-pixel-white text-pixel-black hover:bg-pixel-black/5'
+              }`}
+            >
+              <span className="block text-sm font-bold">使用本机已有</span>
+              <span className="mt-1 block leading-relaxed opacity-80">调用 PATH（环境变量路径）里的 CLI。</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setRuntimeMode('managed')}
+              className={`border-[3px] border-pixel-black p-3 text-left font-pixel text-xs ${
+                runtimeMode === 'managed' ? 'bg-pixel-blue text-pixel-white' : 'bg-pixel-white text-pixel-black hover:bg-pixel-black/5'
+              }`}
+            >
+              <span className="block text-sm font-bold">下载/安装受管版本</span>
+              <span className="mt-1 block leading-relaxed opacity-80">领取后按登记来源继续安装。</span>
+            </button>
+          </div>
+
+          {runtimeMode === 'managed' && (
+            <div className="space-y-2 border-[3px] border-pixel-black bg-pixel-black/5 p-3 font-pixel text-[10px] text-pixel-black/75">
+              <div className="flex flex-wrap gap-2">
+                <a href={docsUrl} target="_blank" rel="noreferrer" className="border-2 border-pixel-black bg-pixel-white px-2 py-1 font-bold hover:bg-pixel-yellow">
+                  官方文档
+                </a>
+                <a href={installUrl} target="_blank" rel="noreferrer" className="border-2 border-pixel-black bg-pixel-white px-2 py-1 font-bold hover:bg-pixel-yellow">
+                  安装来源
+                </a>
+              </div>
+              {installCommands.length > 0 && (
+                <p className="leading-relaxed">建议命令：{installCommands[0]}</p>
+              )}
+              <p className="leading-relaxed">{agentBase?.riskNoteZh || '安装前会要求用户确认，不会自动写入 token、key 或账号信息。'}</p>
+            </div>
+          )}
+
           <label className="block font-pixel text-sm font-bold text-pixel-black">{house.adoptHint}</label>
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder={house.id === 'openclaw' ? '例如：我的龙虾助手' : house.id === 'hermes' ? '例如：Hermes小助手' : '例如：我的编码助手'}
+            placeholder={house.adoptPlaceholder}
             className="w-full border-[3px] border-pixel-black bg-pixel-white px-3 py-2 font-pixel text-sm focus:outline-none"
             onKeyDown={(e) => e.key === 'Enter' && void handleAdopt()}
             disabled={adopting}

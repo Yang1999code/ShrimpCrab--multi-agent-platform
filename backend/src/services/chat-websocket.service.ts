@@ -49,6 +49,7 @@ interface RuntimeProviderConfig {
   models?: string[];
   stateDir?: string | null;
   providerType?: string;
+  runtimeMode?: 'system' | 'managed';
 }
 
 type RuntimeAgentPlatform = AgentPlatform | 'coze';
@@ -351,6 +352,7 @@ class ChatWebSocketServer {
     const platform = this.getPlatformFromManifest(agent.manifest) || 'openclaw';
     const userConfig = readAgentUserConfig(agent);
     const selectedModel = typeof userConfig.model === 'string' ? userConfig.model : undefined;
+    const runtimeMode = userConfig.runtimeMode === 'managed' ? 'managed' : 'system';
     let providerConfig: RuntimeProviderConfig | undefined;
 
     if (agent.providerId) {
@@ -368,8 +370,17 @@ class ChatWebSocketServer {
           models: preferSelectedModel(modelIds, selectedModel),
           stateDir: agent.stateDir,
           providerType: provider.type,
+          runtimeMode,
         };
       }
+    }
+
+    if (!providerConfig) {
+      providerConfig = {
+        apiKey: '',
+        stateDir: agent.stateDir,
+        runtimeMode,
+      };
     }
 
     return { agent, platform, providerConfig };

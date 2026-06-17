@@ -8,6 +8,8 @@ import {
   deleteProvider,
 } from '../services/provider.service.js';
 import { getRuntimeHealth } from '../services/runtime-health.service.js';
+import { getAgentBaseDefinitions, isAgentBaseId } from '../services/agent-base-registry.service.js';
+import { getAgentInstallGuide, getAgentInstallGuides } from '../services/agent-install.service.js';
 
 const router = Router();
 
@@ -34,6 +36,33 @@ router.get('/runtime-health', async (req: AuthenticatedRequest, res: Response) =
   } catch (error) {
     console.error('Runtime health error:', error);
     res.status(500).json({ message: '运行时预检失败' });
+  }
+});
+
+// GET /api/providers/agent-bases - Built-in agent base registry and install sources
+router.get('/agent-bases', async (_req: AuthenticatedRequest, res: Response) => {
+  try {
+    const bases = getAgentBaseDefinitions();
+    const installGuides = getAgentInstallGuides(bases.map((base) => base.id));
+    res.json({ bases, installGuides });
+  } catch (error) {
+    console.error('Agent base registry error:', error);
+    res.status(500).json({ message: '获取智能体底座列表失败' });
+  }
+});
+
+// GET /api/providers/agent-bases/:platform/install-guide - Safe install guide for one base
+router.get('/agent-bases/:platform/install-guide', async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const platform = String(req.params.platform);
+    if (!isAgentBaseId(platform)) {
+      res.status(400).json({ message: `不支持的智能体底座: ${platform}` });
+      return;
+    }
+    res.json({ guide: getAgentInstallGuide(platform) });
+  } catch (error) {
+    console.error('Agent install guide error:', error);
+    res.status(500).json({ message: '获取安装指引失败' });
   }
 });
 
