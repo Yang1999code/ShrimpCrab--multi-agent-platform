@@ -19,7 +19,7 @@ interface AgentConfigModalProps {
 interface Provider {
   id: string;
   name: string;
-  type: 'claude' | 'openai' | 'gemini' | 'openclaw';
+  type: 'claude' | 'openai' | 'codex' | 'opencode' | 'openclaw' | 'gemini' | 'hermes';
   apiKey: string;
   baseUrl?: string;
   models: string[];
@@ -38,8 +38,9 @@ interface AgentUserConfig {
 }
 
 const PLATFORMS = [
-  { value: 'openclaw', label: 'OpenClaw' },
+  { value: 'openclaw', label: 'OpenClaw/PI' },
   { value: 'claude-code', label: 'Claude Code' },
+  { value: 'hermes', label: 'Hermes' },
   { value: 'opencode', label: 'OpenCode' },
   { value: 'codex', label: 'Codex' },
 ];
@@ -47,6 +48,7 @@ const PLATFORMS = [
 const PLATFORM_TO_PROVIDER_TYPE: Record<string, string> = {
   'openclaw': 'openclaw',
   'claude-code': 'claude',
+  'hermes': 'hermes',
   'opencode': 'opencode',
   'codex': 'codex',
 };

@@ -50,7 +50,7 @@ const PROVIDER_TYPE_LABELS: Record<string, string> = {
   codex: 'Codex',
   hermes: 'Hermes',
   opencode: 'OpenCode',
-  openclaw: 'OpenClaw',
+  openclaw: 'OpenClaw/PI',
 };
 
 export function AgentSettingsPanel({ agent, token, onClose, onAgentUpdate }: AgentSettingsPanelProps) {

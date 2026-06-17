@@ -1,5 +1,6 @@
 import { agentRunner, type AgentPlatform, type CliHealthCheck } from './agent-runner.service.js';
 import { getUserProviders } from './provider.service.js';
+import { getAgentBaseDefinition, isAgentBaseId } from './agent-base-registry.service.js';
 
 type ProviderType = 'claude' | 'codex' | 'opencode' | 'openclaw' | 'hermes';
 
@@ -40,6 +41,9 @@ export interface RuntimePlatformHealth {
   ready: boolean;
   issues: string[];
   installHint: string;
+  docsUrl?: string;
+  installUrl?: string;
+  statusBadge?: string;
 }
 
 export interface RuntimeHealthSummary {
@@ -86,7 +90,7 @@ const RUNTIME_PLATFORM_SPECS: RuntimePlatformSpec[] = [
   },
   {
     platform: 'openclaw',
-    label: 'OpenClaw',
+    label: 'OpenClaw/PI',
     providerType: 'openclaw',
     envVarNames: ['OPENCLAW_API_KEY', 'OPENAI_API_KEY'],
     installHint: '安装 OpenClaw CLI，并确保 openclaw 在当前系统 PATH 中可执行；Windows 桌面端使用本机 CLI，不依赖 WSL。',
@@ -141,9 +145,11 @@ export async function getRuntimeHealth(userId: string): Promise<RuntimeHealth> {
         issues.push('未配置该平台供应商，也没有可用的环境变量兜底。');
       }
 
+      const base = isAgentBaseId(spec.platform) ? getAgentBaseDefinition(spec.platform) : null;
+
       return {
         platform: spec.platform,
-        label: spec.label,
+        label: base?.displayName || spec.label,
         providerType: spec.providerType,
         cli,
         provider: {
@@ -154,6 +160,9 @@ export async function getRuntimeHealth(userId: string): Promise<RuntimeHealth> {
         ready: issues.length === 0,
         issues,
         installHint: spec.installHint,
+        docsUrl: base?.docsUrl,
+        installUrl: base?.installUrl,
+        statusBadge: base?.statusBadge,
       };
     })
   );

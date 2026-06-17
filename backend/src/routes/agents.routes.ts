@@ -32,6 +32,7 @@ import {
   publishAgentToMarket,
   unpublishAgentFromMarket,
 } from '../services/market.service.js';
+import { normalizeRuntimeMode } from '../services/agent-base-registry.service.js';
 import {
   listAgentSkills,
   uploadAgentSkill,
@@ -845,7 +846,8 @@ async function executeTeaPartyAgentTurn(
 
   const agentConfig = readAgentUserConfig(agent);
   const selectedModel = typeof agentConfig.model === 'string' ? agentConfig.model : undefined;
-  let providerConfig: { apiKey: string; baseUrl?: string; models?: string[]; stateDir?: string | null; providerType?: string } | undefined;
+  const runtimeMode: 'system' | 'managed' = agentConfig.runtimeMode === 'managed' ? 'managed' : 'system';
+  let providerConfig: { apiKey: string; baseUrl?: string; models?: string[]; stateDir?: string | null; providerType?: string; runtimeMode?: 'system' | 'managed' } | undefined;
 
   if (agent.providerId) {
     const provider = await getProviderById(String(agent.providerId), userId);
@@ -856,6 +858,7 @@ async function executeTeaPartyAgentTurn(
         models: preferSelectedModel(parseProviderModels(provider.models), selectedModel),
         stateDir: agent.stateDir,
         providerType: provider.type,
+        runtimeMode,
       };
     }
   }
@@ -914,7 +917,7 @@ async function executeTeaPartyAgentTurn(
   const teaPartyRuntime = getTeaPartyAgentRuntimePath(userId, agent.id);
   prepareTeaPartyRuntimeWorkspace(teaPartyRuntime.workspacePath, agent.workspacePath);
   const runnerPlatform = platform as AgentPlatform;
-  const cliCheck = await agentRunner.checkCliAvailable(runnerPlatform);
+  const cliCheck = await agentRunner.checkCliAvailable(runnerPlatform, runtimeMode);
   if (!cliCheck.available) {
     const error = new Error(formatCliHealthFailure(runnerPlatform, cliCheck));
     (error as Error & { statusCode?: number; platform?: string }).statusCode = 400;
@@ -934,6 +937,7 @@ async function executeTeaPartyAgentTurn(
       models: providerConfig?.models,
       providerType: providerConfig?.providerType,
       stateDir: turnStateDir,
+      runtimeMode,
     };
   };
 
@@ -1398,11 +1402,21 @@ router.post('/official-lobster/adopt', async (req: AuthenticatedRequest, res: Re
     const userId = req.user!.userId;
     const requestedName = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
     const rawPlatform = typeof req.body?.platform === 'string' ? req.body.platform.trim() : 'openclaw';
+    const runtimeMode = normalizeRuntimeMode(req.body?.runtimeMode);
+    const rawInstallStrategy = typeof req.body?.installStrategy === 'string' ? req.body.installStrategy.trim() : '';
+    const installStrategy = rawInstallStrategy === 'managed' || rawInstallStrategy === 'prompt' || rawInstallStrategy === 'skip'
+      ? rawInstallStrategy
+      : runtimeMode === 'managed'
+        ? 'prompt'
+        : 'skip';
     if (!isAdoptPlatform(rawPlatform)) {
       res.status(400).json({ message: `不支持的平台类型: ${rawPlatform}` });
       return;
     }
-    const result = await adoptOfficialAgentToUser(userId, requestedName, rawPlatform);
+    const result = await adoptOfficialAgentToUser(userId, requestedName, rawPlatform, {
+      runtimeMode,
+      installStrategy,
+    });
 
     if (!result.success || !result.agentId) {
       res.status(400).json({ message: result.error || '官方 Agent 领养失败' });
@@ -1826,9 +1840,10 @@ router.post('/:id/test', async (req: AuthenticatedRequest, res: Response) => {
       return;
     }
 
-    let providerConfig: { apiKey: string; baseUrl?: string; models?: string[] } | undefined;
+    let providerConfig: { apiKey: string; baseUrl?: string; models?: string[]; runtimeMode?: 'system' | 'managed' } | undefined;
     const agentConfig = readAgentUserConfig(agent);
     const selectedModel = typeof agentConfig.model === 'string' ? agentConfig.model : undefined;
+    const runtimeMode = agentConfig.runtimeMode === 'managed' ? 'managed' : 'system';
 
     if (agent.providerId) {
       const provider = await getProviderById(String(agent.providerId), userId);
@@ -1837,6 +1852,7 @@ router.post('/:id/test', async (req: AuthenticatedRequest, res: Response) => {
           apiKey: provider.apiKey,
           baseUrl: provider.baseUrl || undefined,
           models: preferSelectedModel(parseProviderModels(provider.models), selectedModel),
+          runtimeMode,
         };
       }
     }
@@ -1849,7 +1865,7 @@ router.post('/:id/test', async (req: AuthenticatedRequest, res: Response) => {
           available: getCozeRuntimeInfo().configured,
           version: getCozeRuntimeInfo().configured ? 'Coze Chat API v3' : 'COZE_API_TOKEN not configured',
         }
-      : await agentRunner.checkCliAvailable(platform as any);
+      : await agentRunner.checkCliAvailable(platform as any, runtimeMode);
 
     res.json({
       agent: {
@@ -1862,6 +1878,7 @@ router.post('/:id/test', async (req: AuthenticatedRequest, res: Response) => {
         apiKeyPrefix: providerConfig.apiKey.substring(0, 8) + '...',
         baseUrl: providerConfig.baseUrl || 'default',
         modelCount: providerConfig.models?.length || 0,
+        runtimeMode,
       } : null,
       cli: cliCheck,
     });

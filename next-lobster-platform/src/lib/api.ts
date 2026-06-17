@@ -1,4 +1,4 @@
-import { Lobster, Architecture, Message, Conversation, Deliverable, WorkflowDsl, WorkflowExecution, SessionMessage, WhiteboardNote, Project, ProjectInput, ProjectFileContent, ProjectFileNode, ProjectFileTree, RuntimeHealth } from '@/types';
+import { Lobster, Architecture, Message, Conversation, Deliverable, WorkflowDsl, WorkflowExecution, SessionMessage, WhiteboardNote, Project, ProjectInput, ProjectFileContent, ProjectFileNode, ProjectFileTree, RuntimeHealth, AgentBaseDefinition, AgentInstallGuide, AgentBaseId, RuntimeMode } from '@/types';
 import { API_BASE } from '@/lib/runtime';
 
 export type FeishuIntegrationScope = 'agent' | 'team';
@@ -240,7 +240,19 @@ export async function createAgent(data: Partial<Lobster>): Promise<Lobster> {
   return res.json();
 }
 
-export async function adoptOfficialLobster(name: string, platform: string = 'openclaw'): Promise<Lobster> {
+export interface AdoptOfficialLobsterOptions {
+  platform?: AgentBaseId;
+  runtimeMode?: RuntimeMode;
+  installStrategy?: 'skip' | 'prompt' | 'managed';
+}
+
+export async function adoptOfficialLobster(
+  name: string,
+  platformOrOptions: AgentBaseId | AdoptOfficialLobsterOptions = 'openclaw'
+): Promise<Lobster> {
+  const options: AdoptOfficialLobsterOptions = typeof platformOrOptions === 'string'
+    ? { platform: platformOrOptions, runtimeMode: 'system', installStrategy: 'skip' }
+    : platformOrOptions;
   const headers = {
     ...getAuthHeaders(),
     'Content-Type': 'application/json',
@@ -248,7 +260,12 @@ export async function adoptOfficialLobster(name: string, platform: string = 'ope
   const res = await fetch(`${API_BASE}/api/agents/official-lobster/adopt`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ name, platform }),
+    body: JSON.stringify({
+      name,
+      platform: options.platform || 'openclaw',
+      runtimeMode: options.runtimeMode || 'system',
+      installStrategy: options.installStrategy || (options.runtimeMode === 'managed' ? 'prompt' : 'skip'),
+    }),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -722,6 +739,20 @@ export async function fetchRuntimeHealth(): Promise<RuntimeHealth> {
     throw new Error(payload.message || '运行时预检失败');
   }
   return payload.health;
+}
+
+export async function fetchAgentBases(): Promise<{ bases: AgentBaseDefinition[]; installGuides: AgentInstallGuide[] }> {
+  const res = await fetch(`${API_BASE}/api/providers/agent-bases`, {
+    headers: getAuthHeaders(),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(payload.message || '获取智能体底座列表失败');
+  }
+  return {
+    bases: payload.bases || [],
+    installGuides: payload.installGuides || [],
+  };
 }
 
 // ==================== Integrations API ====================
