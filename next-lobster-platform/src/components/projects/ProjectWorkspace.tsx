@@ -107,6 +107,7 @@ export function ProjectWorkspace({
   const [hoveredSessionId, setHoveredSessionId] = useState<string | null>(null);
   const [chatDraft, setChatDraft] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [useA2AAdapter, setUseA2AAdapter] = useState(true);
   const [latestExecution, setLatestExecution] = useState<WorkflowExecution | null>(null);
   const [deliverables, setDeliverables] = useState<Deliverable[]>([]);
   const [reviewingDeliverableId, setReviewingDeliverableId] = useState<string | null>(null);
@@ -517,11 +518,19 @@ export function ProjectWorkspace({
         task: guardedTask,
         architectureId: activeTeam.id,
         projectId: project.id,
+        useA2AAdapter,
       });
       setLatestExecution(started);
       executionSessionRef.current[started.id] = { teamKey: activeTargetKey, sessionId };
       activePollingExecutionRef.current = started.id;
-      appendMessage(activeTargetKey, sessionId, makeMessage('system', `已提交给「${activeTeam.name}」，执行编号：${started.id}`));
+      appendMessage(
+        activeTargetKey,
+        sessionId,
+        makeMessage(
+          'system',
+          `已提交给「${activeTeam.name}」，执行编号：${started.id}，通道：${useA2AAdapter ? 'A2A 标准网关' : '兼容直连通道'}`
+        )
+      );
 
       let current = started;
       let consecutivePollErrors = 0;
@@ -672,6 +681,19 @@ export function ProjectWorkspace({
             </div>
 
             <div className="border-t-4 border-pixel-black bg-pixel-white p-3">
+              <label className="mb-2 inline-flex min-h-8 cursor-pointer items-center gap-2 font-pixel text-xs text-pixel-black">
+                <input
+                  type="checkbox"
+                  checked={useA2AAdapter}
+                  onChange={(event) => setUseA2AAdapter(event.target.checked)}
+                  disabled={isSubmitting || activeMode === 'agent'}
+                  className="h-5 w-5 accent-pixel-green"
+                />
+                <span>A2A 标准通道</span>
+                <span className="text-pixel-black/55">
+                  {useA2AAdapter ? 'A2A 标准网关' : '兼容直连通道'}
+                </span>
+              </label>
               <div className="grid w-full gap-2 md:grid-cols-[minmax(0,1fr)_auto]">
                 <PixelInput
                   value={chatDraft}

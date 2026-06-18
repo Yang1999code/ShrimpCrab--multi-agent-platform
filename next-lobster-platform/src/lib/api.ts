@@ -1,4 +1,4 @@
-import { Lobster, Architecture, Message, Conversation, Deliverable, WorkflowDsl, WorkflowExecution, SessionMessage, WhiteboardNote, Project, ProjectInput, ProjectFileContent, ProjectFileNode, ProjectFileTree, RuntimeHealth, AgentBaseDefinition, AgentInstallGuide, AgentBaseId, RuntimeMode } from '@/types';
+import { Lobster, Architecture, Message, Conversation, Deliverable, WorkflowDsl, WorkflowExecution, SessionMessage, WhiteboardNote, Project, ProjectInput, ProjectFileContent, ProjectFileNode, ProjectFileTree, RuntimeHealth, AgentBaseDefinition, AgentInstallGuide, AgentBaseId, RuntimeMode, A2AAgentCard, A2AMessage, A2ATask } from '@/types';
 import { API_BASE } from '@/lib/runtime';
 
 export type FeishuIntegrationScope = 'agent' | 'team';
@@ -827,6 +827,83 @@ export async function saveFeishuConfig(
   return payload;
 }
 
+export async function fetchA2AAgentCards(): Promise<A2AAgentCard[]> {
+  const res = await fetch(`${API_BASE}/api/a2a/cards`, {
+    headers: getAuthHeaders(),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(payload.message || '获取 A2A Agent Card 列表失败');
+  }
+  return payload.cards || [];
+}
+
+export async function fetchA2AAgentCard(platform: AgentBaseId): Promise<A2AAgentCard> {
+  const res = await fetch(`${API_BASE}/api/a2a/cards/${encodeURIComponent(platform)}`, {
+    headers: getAuthHeaders(),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(payload.message || '获取 A2A Agent Card 失败');
+  }
+  return payload.card;
+}
+
+export async function fetchA2AInstanceAgentCard(agentId: string): Promise<A2AAgentCard> {
+  const res = await fetch(`${API_BASE}/api/a2a/agents/${encodeURIComponent(agentId)}/card`, {
+    headers: getAuthHeaders(),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(payload.message || '获取 Agent A2A Card 失败');
+  }
+  return payload.card;
+}
+
+export async function startA2ATask(
+  agentId: string,
+  message: A2AMessage,
+  options: {
+    contextId?: string;
+    timeoutMs?: number;
+    waitForCompletion?: boolean;
+  } = {}
+): Promise<A2ATask> {
+  const res = await fetch(`${API_BASE}/api/a2a/agents/${encodeURIComponent(agentId)}/tasks`, {
+    method: 'POST',
+    headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, ...options }),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(payload.message || '启动 A2A 任务失败');
+  }
+  return payload.task;
+}
+
+export async function fetchA2ATask(taskId: string): Promise<A2ATask> {
+  const res = await fetch(`${API_BASE}/api/a2a/tasks/${encodeURIComponent(taskId)}`, {
+    headers: getAuthHeaders(),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(payload.message || '获取 A2A 任务失败');
+  }
+  return payload.task;
+}
+
+export async function cancelA2ATask(taskId: string): Promise<A2ATask> {
+  const res = await fetch(`${API_BASE}/api/a2a/tasks/${encodeURIComponent(taskId)}/cancel`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(payload.message || '取消 A2A 任务失败');
+  }
+  return payload.task;
+}
+
 export async function deleteFeishuConfig(
   scope: FeishuIntegrationScope,
   subjectId: string
@@ -887,6 +964,7 @@ export interface StartWorkflowExecutionRequest {
   architectureId?: string;
   projectId?: string;
   dryRun?: boolean;
+  useA2AAdapter?: boolean;
 }
 
 export async function startWorkflowExecution(

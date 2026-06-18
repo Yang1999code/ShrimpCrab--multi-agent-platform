@@ -55,6 +55,16 @@ export interface RuntimeHealthSummary {
 
 export interface RuntimeHealth {
   checkedAt: string;
+  a2a: {
+    available: boolean;
+    endpoint: string;
+    authentication: 'JWT';
+    capabilities: {
+      taskLifecycle: boolean;
+      taskEvents: boolean;
+      logicalCancellation: boolean;
+    };
+  };
   platforms: RuntimePlatformHealth[];
   summary: RuntimeHealthSummary;
 }
@@ -169,6 +179,16 @@ export async function getRuntimeHealth(userId: string): Promise<RuntimeHealth> {
 
   return {
     checkedAt: new Date().toISOString(),
+    a2a: {
+      available: true,
+      endpoint: '/api/a2a',
+      authentication: 'JWT',
+      capabilities: {
+        taskLifecycle: true,
+        taskEvents: true,
+        logicalCancellation: true,
+      },
+    },
     platforms,
     summary: {
       total: platforms.length,

@@ -16,6 +16,7 @@ import workflowsRoutes from './routes/workflows.routes.js';
 import projectsRoutes from './routes/projects.routes.js';
 import architecturesRoutes from './routes/architectures.routes.js';
 import integrationsRoutes from './routes/integrations.routes.js';
+import a2aRoutes from './routes/a2a.routes.js';
 import { initWorkspaceRoot, resolveStoredPath } from './services/workspace.service.js';
 import { startChatServer } from './services/chat-websocket.service.js';
 import { agentRunner } from './services/agent-runner.service.js';
@@ -90,6 +91,7 @@ app.use('/api/workflows', workflowsRoutes);
 app.use('/api/projects', projectsRoutes);
 app.use('/api/architectures', architecturesRoutes);
 app.use('/api/integrations', integrationsRoutes);
+app.use('/api/a2a', a2aRoutes);
 app.use('/architectures', architecturesRoutes);
 
 // Serve agent avatars from workspaces

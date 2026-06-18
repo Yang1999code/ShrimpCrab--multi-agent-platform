@@ -786,12 +786,14 @@ function buildCliHealthResult(
 }
 
 export function formatCliHealthFailure(platform: AgentPlatform | string, cli: CliHealthCheck): string {
-  const detail = cli.stderr || cli.errorMessage || cli.stdout || '';
+  const rawDetail = cli.stderr || cli.errorMessage || cli.stdout || '';
+  const replacementCount = (rawDetail.match(/\uFFFD/g) || []).length;
+  const detail = replacementCount >= 2 ? '' : rawDetail;
   const code = [cli.errorCode, cli.errorName].filter(Boolean).join('/');
   const prefix = `${platform} CLI 不可用`;
   const command = cli.displayCommand ? `检查命令：${cli.displayCommand}` : `命令：${cli.command}`;
-  const reason = detail || code || (cli.status != null ? `退出码 ${cli.status}` : '') || '未返回详细错误';
-  return `${prefix}。${command}。${code ? `错误：${code}。` : ''}${reason}`;
+  const reason = detail || (!code && cli.status != null ? `退出码 ${cli.status}` : '') || (!code ? '未返回详细错误' : '');
+  return `${prefix}。${command}。${code ? `错误：${code}` : ''}${reason ? `${code ? '。' : ''}${reason}` : ''}`;
 }
 
 class AgentRunner extends EventEmitter {

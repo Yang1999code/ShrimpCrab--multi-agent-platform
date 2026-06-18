@@ -2,7 +2,7 @@ import { EventEmitter } from 'events';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import { agentRunner, type AgentPlatform, type ProviderConfig } from './agent-runner.service.js';
+import { type AgentPlatform, type ProviderConfig } from './agent-runner.service.js';
 import { getAgentByIdAndUser, readAgentUserConfig } from './agent.service.js';
 import { getProviderById } from './provider.service.js';
 import { executeCozeAgentTurn } from './coze-market.service.js';
@@ -10,6 +10,7 @@ import { buildAgentRuntimePrompt } from './agent-runtime-context.service.js';
 import { ensureProjectWorkspace, getProject, touchProject } from './project.service.js';
 import { getTeamRuntimePath, resolveStoredPath } from './workspace.service.js';
 import { registerDeliverable } from './deliverable.service.js';
+import { dispatchWorkflowAgentTask } from './workflow-agent-dispatch.service.js';
 import type { UserAgentInstance } from '../db/schema.js';
 
 export type WorkflowNodeType = 'start' | 'agent' | 'condition' | 'end';
@@ -30,6 +31,12 @@ export type WorkflowNodeExecutionStatus =
   | 'succeeded'
   | 'failed'
   | 'skipped';
+export type WorkflowExecutionChannel =
+  | 'internal'
+  | 'dry-run'
+  | 'a2a-gateway'
+  | 'direct-runner'
+  | 'coze-adapter';
 
 export interface WorkflowDslNode {
   id: string;
@@ -88,6 +95,7 @@ export interface WorkflowNodeRunState {
   /** True when the node "succeeded" only via fallback (CLI unavailable / unbound), not real work. */
   degraded?: boolean;
   degradedReason?: string;
+  executionChannel?: WorkflowExecutionChannel;
   startedAt?: string;
   completedAt?: string;
   runCount: number;
@@ -141,6 +149,7 @@ export interface WorkflowExecution {
   task: string;
   status: WorkflowExecutionStatus;
   dryRun: boolean;
+  useA2AAdapter: boolean;
   createdAt: string;
   startedAt?: string;
   updatedAt: string;
@@ -161,6 +170,7 @@ export interface StartWorkflowExecutionInput {
   workflowDsl: WorkflowDsl;
   task: string;
   dryRun?: boolean;
+  useA2AAdapter?: boolean;
 }
 
 /** Summary of a node's run state, kept small for WS broadcast. */
@@ -178,6 +188,7 @@ export interface WorkflowNodeStateSummary {
   runCount: number;
   error?: string;
   degraded?: boolean;
+  executionChannel?: WorkflowExecutionChannel;
 }
 
 /** Lightweight delta pushed over WebSocket on every execution event. */
@@ -249,6 +260,7 @@ class WorkflowExecutorService extends EventEmitter {
       task: input.task,
       status: 'queued',
       dryRun: Boolean(input.dryRun),
+      useA2AAdapter: input.useA2AAdapter === true,
       createdAt: now,
       updatedAt: now,
       workflowDsl: normalizedDsl,
@@ -367,6 +379,7 @@ class WorkflowExecutorService extends EventEmitter {
         sharedWorkspacePath: execution.sharedWorkspacePath,
         runWorkspacePath: execution.runWorkspacePath,
         artifactsPath: execution.artifactsPath,
+        useA2AAdapter: execution.useA2AAdapter,
       },
     });
 
@@ -517,12 +530,14 @@ class WorkflowExecutorService extends EventEmitter {
 
   private async executeNode(runtime: RuntimeState, node: WorkflowDslNode): Promise<void> {
     if (node.type === 'start') {
+      runtime.execution.nodeStates[node.id].executionChannel = 'internal';
       const output = runtime.execution.task;
       this.markNodeSucceeded(runtime, node, output, this.persistNodeOutput(runtime, node, output));
       return;
     }
 
     if (node.type === 'condition') {
+      runtime.execution.nodeStates[node.id].executionChannel = 'internal';
       const branch = this.evaluateCondition(runtime, node);
       runtime.selectedBranches.set(node.id, branch);
       this.activateOutgoingEdges(runtime, node, branch);
@@ -538,6 +553,7 @@ class WorkflowExecutorService extends EventEmitter {
     }
 
     if (node.type === 'end') {
+      runtime.execution.nodeStates[node.id].executionChannel = 'internal';
       const output = this.buildNodeInput(runtime, node);
       this.markNodeSucceeded(runtime, node, output, this.persistNodeOutput(runtime, node, output));
       runtime.execution.finalOutput = output;
@@ -562,6 +578,7 @@ class WorkflowExecutorService extends EventEmitter {
     const state = runtime.execution.nodeStates[node.id];
     if (runtime.execution.dryRun) {
       state.agentName = node.label;
+      state.executionChannel = 'dry-run';
       await sleep(Number(process.env.WORKFLOW_DRY_RUN_NODE_DELAY_MS || 120));
       const outputLines = [
         `[${node.label}] dry-run completed.`,
@@ -624,6 +641,7 @@ class WorkflowExecutorService extends EventEmitter {
       ],
     });
     if (platform === 'coze') {
+      state.executionChannel = 'coze-adapter';
       return executeCozeAgentTurn(agent, {
         userId: runtime.execution.userId,
         conversationId: runtime.execution.id,
@@ -631,14 +649,16 @@ class WorkflowExecutorService extends EventEmitter {
       });
     }
 
-    return agentRunner.executeMessage(
-      agent.id,
+    state.executionChannel = runtime.execution.useA2AAdapter ? 'a2a-gateway' : 'direct-runner';
+    return dispatchWorkflowAgentTask({
+      useA2AAdapter: runtime.execution.useA2AAdapter,
+      agentId: agent.id,
       platform,
-      runtime.sharedWorkspacePath,
-      runtimePrompt,
-      workflowProviderConfig,
-      Math.max(1, Math.floor(runtime.dsl.execution.timeoutSec || 1800)) * 1000
-    );
+      workspacePath: runtime.sharedWorkspacePath,
+      inputText: runtimePrompt,
+      providerConfig: workflowProviderConfig,
+      timeoutMs: Math.max(1, Math.floor(runtime.dsl.execution.timeoutSec || 1800)) * 1000,
+    });
   }
 
   private seedWorkflowOpenClawState(agent: UserAgentInstance, workflowStateDir: string): void {
@@ -764,6 +784,7 @@ class WorkflowExecutorService extends EventEmitter {
         artifacts,
         degraded: state.degraded ?? false,
         degradedReason: state.degradedReason,
+        executionChannel: state.executionChannel,
       },
     });
     if (!state.degraded) {
@@ -1183,6 +1204,7 @@ class WorkflowExecutorService extends EventEmitter {
         runCount: state.runCount,
         error: state.error,
         degraded: state.degraded,
+        executionChannel: state.executionChannel,
       })),
       finalOutput: execution.finalOutput,
       error: execution.error,
@@ -1203,6 +1225,7 @@ class WorkflowExecutorService extends EventEmitter {
         task: execution.task,
         status: execution.status,
         dryRun: execution.dryRun,
+        useA2AAdapter: execution.useA2AAdapter,
         createdAt: execution.createdAt,
         startedAt: execution.startedAt,
         completedAt: execution.completedAt,

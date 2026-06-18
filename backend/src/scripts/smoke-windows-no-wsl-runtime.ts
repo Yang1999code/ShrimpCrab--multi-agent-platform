@@ -130,6 +130,9 @@ async function main() {
   const { createProvider } = await import('../services/provider.service.js');
   const { createAgent, deleteAgent } = await import('../services/agent.service.js');
   const { workflowExecutor } = await import('../services/workflow-executor.service.js');
+  const { localA2AServer } = await import('../a2a/a2a-server.service.js');
+  const { a2aRouter } = await import('../a2a/a2a-router.service.js');
+  const { createA2ATextMessage } = await import('../a2a/a2a.types.js');
   const { getRawDb } = await import('../db/index.js');
 
   let userId = '';
@@ -184,6 +187,8 @@ async function main() {
     assert(openClawHealth.cli.available, `Runtime health did not see fake OpenClaw CLI: ${JSON.stringify(openClawHealth.cli)}`);
     assert(openClawHealth.cli.usesWsl === false, 'Runtime health unexpectedly marked OpenClaw as using WSL.');
     assert((openClawHealth.provider.configuredCount || 0) >= 1, 'Runtime health did not count the OpenClaw provider.');
+    assert(runtimeHealth.a2a.available, 'Runtime health did not report the local A2A server as available.');
+    assert(runtimeHealth.a2a.authentication === 'JWT', 'Runtime health A2A authentication should be JWT.');
 
     const agent = await createAgent(userId, {
       name: `Windows No WSL Agent ${unique}`,
@@ -197,6 +202,51 @@ async function main() {
       },
     });
     createdAgentIds.push(agent.id);
+
+    const instanceCard = await localA2AServer.getAgentCard(userId, agent.id);
+    assert(instanceCard?.id === agent.id, 'A2A instance card did not use the real agent id.');
+    assert(instanceCard?.metadata?.platform === 'openclaw', 'A2A instance card did not expose OpenClaw platform.');
+
+    const a2aTask = await a2aRouter.sendMessage({
+      userId,
+      agentId: agent.id,
+      message: createA2ATextMessage('user', 'Run a real local A2A task through the fake OpenClaw CLI.'),
+      contextId: 'windows-a2a-sync',
+      timeoutMs: 5000,
+    });
+    assert(a2aTask.status.state === 'completed', `A2A task expected completed, got ${a2aTask.status.state}.`);
+    assert(
+      a2aTask.status.message?.parts.some((part) => part.kind === 'text' && part.text.includes('fake openclaw response')),
+      'A2A task did not contain fake OpenClaw output.'
+    );
+
+    const asyncA2ATask = a2aRouter.startMessage({
+      userId,
+      agentId: agent.id,
+      message: createA2ATextMessage('user', 'Run an asynchronous local A2A task.'),
+      contextId: 'windows-a2a-async',
+      timeoutMs: 5000,
+    });
+    const asyncA2ATerminal = await a2aRouter.sendMessage({
+      userId,
+      agentId: agent.id,
+      message: createA2ATextMessage('user', 'Run another synchronous A2A task while async lifecycle is enabled.'),
+      contextId: 'windows-a2a-second-sync',
+      timeoutMs: 5000,
+    });
+    assert(asyncA2ATerminal.status.state === 'completed', 'Second A2A task did not complete.');
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const current = a2aRouter.getTask(userId, asyncA2ATask.id);
+      if (current && ['completed', 'failed', 'canceled'].includes(current.status.state)) break;
+      await sleep(10);
+    }
+    const asyncStored = a2aRouter.getTask(userId, asyncA2ATask.id);
+    assert(asyncStored?.status.state === 'completed', 'Asynchronous A2A task did not complete.');
+    assert(
+      (a2aRouter.getTaskEvents(userId, asyncA2ATask.id) || []).map((event) => event.task.status.state).join(',') ===
+        'submitted,working,completed',
+      'Asynchronous A2A task state history was incomplete.'
+    );
 
     const workflowDsl: WorkflowDsl = {
       schemaVersion: '1.0',
@@ -267,7 +317,10 @@ async function main() {
       windowsNoWslRuntimeVerified: true,
       openClawHealthCommand: cli.command,
       runtimeHealthOpenClawReady: openClawHealth.ready,
+      runtimeHealthA2AReady: runtimeHealth.a2a.available,
       directResponseVerified: true,
+      a2aTaskStatus: a2aTask.status.state,
+      asyncA2ATaskStatus: asyncStored.status.state,
       workflowStatus: execution.status,
       fakeOpenClawCalls: calls.length,
       fakeOpenClawAgentCalls: agentCalls.length,

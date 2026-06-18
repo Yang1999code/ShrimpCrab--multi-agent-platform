@@ -17,6 +17,10 @@
     "smoke:http": "tsx src/scripts/smoke-http-project-upload.ts",
     "smoke:http:workflow": "tsx src/scripts/smoke-http-workflow-handoff.ts",
     "smoke:runtime": "tsx src/scripts/smoke-runtime-health.ts",
+    "smoke:a2a": "tsx src/scripts/smoke-a2a-routes.ts",
+    "smoke:a2a:workflow": "tsx src/scripts/smoke-workflow-a2a-adapter.ts",
+    "smoke:a2a:real": "tsx src/scripts/smoke-real-a2a-workflow.ts",
+    "assert:a2a": "tsx src/scripts/assert-a2a-types.ts && tsx src/scripts/assert-a2a-card-service.ts && tsx src/scripts/assert-a2a-instance-card.ts && tsx src/scripts/assert-a2a-task-mapper.ts && tsx src/scripts/assert-a2a-full-mapper.ts && tsx src/scripts/assert-a2a-task-store.ts && tsx src/scripts/assert-agent-gateway.ts && tsx src/scripts/assert-agent-gateway-provider.ts && tsx src/scripts/assert-a2a-router-service.ts && tsx src/scripts/assert-a2a-router-lifecycle.ts && tsx src/scripts/assert-a2a-client-server.ts && tsx src/scripts/assert-workflow-agent-dispatch.ts && tsx src/scripts/assert-workflow-a2a-flag.ts && tsx src/scripts/assert-cli-health-format.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:studio": "drizzle-kit studio"

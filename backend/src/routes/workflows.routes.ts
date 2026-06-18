@@ -38,12 +38,13 @@ router.post('/generate-dsl', async (req: AuthenticatedRequest, res: Response) =>
 
 router.post('/execute', async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const { workflowDsl, task, architectureId, projectId, dryRun } = req.body as {
+    const { workflowDsl, task, architectureId, projectId, dryRun, useA2AAdapter } = req.body as {
       workflowDsl?: unknown;
       task?: unknown;
       architectureId?: unknown;
       projectId?: unknown;
       dryRun?: unknown;
+      useA2AAdapter?: unknown;
     };
 
     if (!isWorkflowDsl(workflowDsl)) {
@@ -62,6 +63,10 @@ router.post('/execute', async (req: AuthenticatedRequest, res: Response) => {
       workflowDsl,
       task: task.trim(),
       dryRun: dryRun === true,
+      useA2AAdapter: resolveWorkflowA2AEnabled(
+        typeof useA2AAdapter === 'boolean' ? useA2AAdapter : undefined,
+        process.env.OPENCLAW_A2A_WORKFLOW_ENABLED
+      ),
     });
 
     res.status(202).json({ execution });
@@ -132,6 +137,15 @@ function isWorkflowDsl(value: unknown): value is WorkflowDsl {
     Array.isArray(row.nodes) &&
     Array.isArray(row.edges) &&
     Boolean(row.execution && typeof row.execution === 'object');
+}
+
+export function resolveWorkflowA2AEnabled(
+  requested: boolean | undefined,
+  environmentValue: string | undefined
+): boolean {
+  if (typeof requested === 'boolean') return requested;
+  const normalized = environmentValue?.trim().toLowerCase();
+  return normalized === '1' || normalized === 'true';
 }
 
 export default router;

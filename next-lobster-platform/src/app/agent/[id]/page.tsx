@@ -14,6 +14,7 @@ import { AgentSettingsPanel } from '@/components/chat/AgentSettingsPanel';
 import { CapabilitiesConfig } from '@/components/chat/CapabilitiesConfig';
 import { TokenUsageDisplay } from '@/components/chat/TokenUsageDisplay';
 import { MessageRenderer } from '@/components/chat/MessageRenderer';
+import { A2AAgentPanel } from '@/components/chat/A2AAgentPanel';
 import { getModelDisplayName, normalizeProviderModels } from '@/lib/providerPresets';
 import { API_BASE } from '@/lib/runtime';
 
@@ -91,7 +92,7 @@ interface UploadedChatAsset {
   previewUrl: string;
 }
 
-type TabType = 'chat' | 'monitor' | 'capabilities';
+type TabType = 'chat' | 'monitor' | 'capabilities' | 'a2a';
 
 function MessageActionButton({
   title,
@@ -976,11 +977,12 @@ export default function AgentChatPage() {
                 className="absolute right-3 top-[calc(100%+6px)] z-[180] w-64 border-4 border-pixel-black bg-pixel-white p-2 md:hidden"
                 style={{ boxShadow: '4px 4px 0px 0px #101010' }}
               >
-                <div className="grid grid-cols-3 gap-1 border-b-2 border-pixel-black pb-2">
+                <div className="grid grid-cols-4 gap-1 border-b-2 border-pixel-black pb-2">
                   {([
                     ['chat', '对话'],
                     ['monitor', '监控'],
                     ['capabilities', '能力'],
+                    ['a2a', 'A2A'],
                   ] as Array<[TabType, string]>).map(([tab, label]) => (
                     <button
                       key={tab}
@@ -1113,11 +1115,19 @@ export default function AgentChatPage() {
           </button>
           <button
             onClick={() => setActiveTab('capabilities')}
-            className={`flex-1 px-4 py-2 font-pixel text-sm transition-colors ${
+            className={`flex-1 px-4 py-2 font-pixel text-sm border-r-2 border-pixel-black transition-colors ${
               activeTab === 'capabilities' ? 'bg-pixel-black text-pixel-white' : 'bg-pixel-white text-pixel-black hover:bg-pixel-black/10'
             }`}
           >
             🛠️ 能力配置
+          </button>
+          <button
+            onClick={() => setActiveTab('a2a')}
+            className={`flex-1 px-4 py-2 font-pixel text-sm transition-colors ${
+              activeTab === 'a2a' ? 'bg-pixel-black text-pixel-white' : 'bg-pixel-white text-pixel-black hover:bg-pixel-black/10'
+            }`}
+          >
+            A2A
           </button>
         </div>
       </motion.div>
@@ -1194,6 +1204,10 @@ export default function AgentChatPage() {
               }}
               token={token || ''}
             />
+          )}
+
+          {activeTab === 'a2a' && agent && (
+            <A2AAgentPanel agentId={agent.id} agentName={agent.name} />
           )}
         </div>
 

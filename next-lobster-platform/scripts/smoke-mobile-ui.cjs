@@ -57,7 +57,7 @@ assert(clientLayout.includes('pb-0 md:pb-4'), 'Normal mobile content must avoid 
 assert(clientLayout.includes("pathname.startsWith('/agent/') || pathname.startsWith('/agent-tea-party')"), 'Mobile chat routes must use a full-screen app shell.');
 
 assert(globals.includes('@media (max-width: 767px)'), 'Mobile media query is missing.');
-assert(globals.includes('body {\n    font-size: 16px;'), 'Normal mobile body font must be compact by default.');
+assert(/body\s*\{\s*font-size:\s*16px;/.test(globals), 'Normal mobile body font must be compact by default.');
 assert(globals.includes('.text-\\[9px\\] { font-size: 11px !important; }'), 'Normal mobile 9px fallback must stay compact.');
 assert(globals.includes('.text-\\[10px\\] { font-size: 12px !important; }'), 'Normal mobile 10px fallback must stay compact.');
 assert(globals.includes('.text-\\[11px\\] { font-size: 12px !important; }'), 'Normal mobile 11px fallback must stay compact.');
